@@ -2050,6 +2050,22 @@ body:has(.upload-left-panel-marker) section[data-testid="stSidebar"] {
   left: 0 !important;
 }
 
+/* FINAL TWEAK: reduce header-gap + straighten left tabs */
+body:has(.upload-left-panel-marker) .block-container {
+  padding-top: 92px !important;
+}
+
+body:has(.upload-left-panel-marker) [data-testid="stSidebar"] .stButton {
+  margin: 0 0 10px 0 !important;
+}
+
+body:has(.upload-left-panel-marker) [data-testid="stSidebar"] .stButton > button {
+  border-radius: 8px !important;
+  width: 100% !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
