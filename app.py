@@ -3687,38 +3687,24 @@ def goto_tab_button(label: str, tab_name: str, key: str) -> None:
 def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
     # Screenshot-matched executive navigation rendered as HTML links.
     current_run_id = params.get("run_id", "") or st.session_state.get("run_id", "")
-    selected_tab = params.get("tab", "") or st.session_state.get("dashboard_tab", "Overview")
+    selected_tab = st.session_state.get("dashboard_tab") or params.get("tab", "") or "Overview"
     legacy_tabs = {"Drilldown": "Detailed Report", "Compare": "Track Comparison", "Reports": "Overview", "Trends": "Overview"}
     selected_tab = legacy_tabs.get(selected_tab, selected_tab)
     if selected_tab not in ["Overview", "Track Comparison", "Detailed Report", "Chatbot"]:
         selected_tab = "Overview"
     st.session_state["dashboard_tab"] = selected_tab
 
-    active_program = params.get("program", "") or st.session_state.get("active_program", PROGRAM_SAAS)
+    active_program = st.session_state.get("active_program") or params.get("program", "") or PROGRAM_SAAS
     program_values = [PROGRAM_SAAS, "Cisco IQ Onprem - Assets", "Cisco IQ Onprem - Risk App", "CX AI Assistant", "AI Framework"]
     if active_program not in program_values:
         active_program = PROGRAM_SAAS
     st.session_state["active_program"] = active_program
 
-    active_track = params.get("track", "") or st.session_state.get("active_track", "API")
+    active_track = st.session_state.get("active_track") or params.get("track", "") or "API"
     track_values = ["API", "UI", "Cloud Assist Connector", "Customer Inventory Benchmarking"]
     if active_track not in track_values:
         active_track = "API"
     st.session_state["active_track"] = active_track
-
-    def nav_url(tab=None, program=None, track=None):
-        import urllib.parse
-        q = {
-            "view": "dashboard",
-            "run_id": current_run_id,
-            "tab": tab or selected_tab,
-            "program": program or active_program,
-            "track": track or active_track,
-        }
-        return "?" + urllib.parse.urlencode(q)
-
-    def active_cls(is_active: bool) -> str:
-        return " active" if is_active else ""
 
     programs_html = [
         ("🎧", "Cisco IQ SaaS Support Services", PROGRAM_SAAS),
@@ -3740,46 +3726,59 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
     if len(region_choices) == 1:
         region_choices = ["All", "US", "EMEA", "APJC"]
 
-    program_links = ""
-    for icon, label, value in programs_html:
-        program_links += f'<a class="ciq-program-link{active_cls(active_program == value)}" target="_self" href="{nav_url(program=value, tab="Overview", track="API")}"><span style="width:28px;display:inline-block;">{icon}</span>{label}</a>'
+    nav_left, nav_right = st.columns([1.15, 3.2], gap="small")
+    with nav_left:
+        with st.container(border=True):
+            st.markdown("**1. Programs**")
+            for icon, label, value in programs_html:
+                if st.button(
+                    f"{icon}  {label}",
+                    key=f"prog_fast_{sanitize_token(value)}",
+                    type="primary" if active_program == value else "secondary",
+                    use_container_width=True,
+                ):
+                    active_program = value
+                    active_track = TRACK_API
+                    selected_tab = "Overview"
+                    st.session_state["active_program"] = value
+                    st.session_state["active_track"] = TRACK_API
+                    st.session_state["dashboard_tab"] = "Overview"
 
-    track_links = ""
-    for value in tracks_html:
-        track_links += f'<a class="ciq-track-link{active_cls(active_track == value)}" target="_self" href="{nav_url(track=value, tab="Overview")}">{value}</a>'
+    with nav_right:
+        with st.container(border=True):
+            st.markdown("**2. Program Tracks**")
+            t1, t2, t3, t4 = st.columns([.58, .68, 1.55, 1.95], gap="small")
+            for col, value in zip([t1, t2, t3, t4], tracks_html):
+                if col.button(
+                    value,
+                    key=f"trk_fast_{sanitize_token(value)}",
+                    type="primary" if active_track == value else "secondary",
+                    use_container_width=True,
+                ):
+                    active_track = value
+                    selected_tab = "Overview"
+                    st.session_state["active_track"] = value
+                    st.session_state["dashboard_tab"] = "Overview"
 
-    tab_links = ""
-    for value, label in tabs_html:
-        tab_links += f'<a class="ciq-tab-link{active_cls(selected_tab == value)}" target="_self" href="{nav_url(tab=value)}">{label}</a>'
+            st.markdown("**3. Dashboard Views**")
+            v1, v2, v3, v4 = st.columns([1.05, 1.42, 1.32, 1.15], gap="small")
+            for col, (value, label) in zip([v1, v2, v3, v4], tabs_html):
+                if col.button(
+                    label,
+                    key=f"tab_fast_{sanitize_token(value)}",
+                    type="primary" if selected_tab == value else "secondary",
+                    use_container_width=True,
+                ):
+                    selected_tab = value
+                    st.session_state["dashboard_tab"] = value
 
-    region_options = "".join([f'<option>{"All" if r == "All" else r}</option>' for r in region_choices])
-
-    st.markdown(
-        f"""
-<div class="ciq-nav-wrap">
-  <div class="ciq-program-panel">
-    <div class="ciq-title">1. Programs</div>
-    {program_links}
-  </div>
-  <div class="ciq-main-panel">
-    <div class="ciq-title">2. Program Tracks</div>
-    <div class="ciq-track-grid">
-      {track_links}
-      <div class="ciq-region-card">
-        <div class="ciq-region-title">Region Filter</div>
-        <select class="ciq-region-select">{region_options}</select>
-      </div>
-    </div>
-    <div class="ciq-title">3. Dashboard Views</div>
-    <div class="ciq-tab-grid">
-      {tab_links}
-      <div class="ciq-spacer"></div>
-    </div>
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+            st.selectbox(
+                "Region Filter",
+                region_choices,
+                index=0,
+                key="dashboard_nav_region_visual",
+                disabled=True,
+            )
 
     if active_program != PROGRAM_SAAS:
         with st.container(border=True):
