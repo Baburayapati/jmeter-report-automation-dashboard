@@ -5752,9 +5752,6 @@ if dashboard_only:
     else:
         render_management_landing_page()
 elif team_upload_view:
-    if st.session_state.run_frames and not st.session_state.get("team_authenticated"):
-        render_executive_dashboard(st.session_state.run_frames)
-        st.stop()
     if not st.session_state.get("team_authenticated", False):
         render_main_page(show_subtitle=st.session_state.get("team_authenticated", False))
     access_granted = team_upload_access_granted()
