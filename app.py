@@ -729,19 +729,25 @@ div[style*="min-height: 34px"]:empty {
   min-height: 0 !important;
 }
 .exact-nav-anchor + div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
-  padding: 16px 18px 8px 18px !important;
+  padding: 34px 18px 8px 18px !important;
 }
 .exact-label {
-  font-size: 20px;
-  font-weight: 900;
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 850;
   letter-spacing: .2px;
   text-transform: none;
-  margin: 0 0 12px 0;
-  color: #0f2b68;
+  margin: 0 0 10px 0;
+  color: #111827;
+  border: 1px solid #c9d4e8;
+  border-radius: 10px;
+  background: rgba(255,255,255,.76);
+  padding: 4px 10px;
 }
 .exact-label.white {
-  color: #ffffff;
-  text-shadow: 0 1px 2px rgba(15,23,42,.15);
+  color: #111827;
+  text-shadow: none;
+  background: rgba(255,255,255,.88);
 }
 /* Button styles inside exact nav */
 .exact-nav-anchor + div[data-testid="stHorizontalBlock"] .stButton > button {
