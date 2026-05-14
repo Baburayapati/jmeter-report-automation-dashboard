@@ -878,7 +878,7 @@ div[style*="height:70px"]:empty,
 }
 .ciq-track-grid {
   display: grid;
-  grid-template-columns: .58fr .68fr 1.55fr 1.95fr;
+  grid-template-columns: .58fr .68fr 1.55fr 1.95fr 190px;
   gap: 14px;
   align-items: start;
   margin-bottom: 16px;
@@ -898,16 +898,48 @@ div[style*="height:70px"]:empty,
   background: linear-gradient(90deg,#2563eb,#7c3aed);
   border-color: transparent;
 }
+.ciq-region-card {
+  grid-row: span 2;
+  background: #fff;
+  border: 1px solid #dbe4f0;
+  border-radius: 16px;
+  padding: 11px;
+  min-height: 92px;
+  box-shadow: 0 12px 24px rgba(15,23,42,.055);
+}
+.ciq-region-title {
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: #0f2b68;
+  margin-bottom: 8px;
+}
+.ciq-region-select {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #dbe4f0;
+  border-radius: 11px;
+  background: #f8fafc;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #111827;
+}
 .ciq-tab-grid {
   display: grid;
-  grid-template-columns: 1.05fr 1.42fr 1.32fr 1.15fr;
+  grid-template-columns: 1.05fr 1.42fr 1.32fr 1.15fr 190px;
   gap: 14px;
   align-items: start;
+}
+.ciq-spacer {
+  width: 190px;
 }
 @media(max-width:1100px){
   .ciq-nav-wrap { grid-template-columns: 1fr; }
   .ciq-main-panel { padding: 16px; }
   .ciq-track-grid, .ciq-tab-grid { grid-template-columns: 1fr; }
+  .ciq-spacer { display:none; }
 }
 
 
@@ -3674,6 +3706,20 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         active_track = "API"
     st.session_state["active_track"] = active_track
 
+    def nav_url(tab=None, program=None, track=None):
+        import urllib.parse
+        q = {
+            "view": "dashboard",
+            "run_id": current_run_id,
+            "tab": tab or selected_tab,
+            "program": program or active_program,
+            "track": track or active_track,
+        }
+        return "?" + urllib.parse.urlencode(q)
+
+    def active_cls(is_active: bool) -> str:
+        return " active" if is_active else ""
+
     programs_html = [
         ("🎧", "Cisco IQ SaaS Support Services", PROGRAM_SAAS),
         ("▧", "Cisco IQ Onprem - Assets", "Cisco IQ Onprem - Assets"),
@@ -3689,48 +3735,51 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         ("Chatbot", "● AI Chatbot"),
     ]
 
-    with st.container(border=True):
-        st.markdown("**1. Programs**")
-        pcols = st.columns(len(programs_html), gap="small")
-        for col, (icon, label, value) in zip(pcols, programs_html):
-            if col.button(
-                f"{icon} {label}",
-                key=f"program_nav_{sanitize_token(value)}",
-                type="primary" if active_program == value else "secondary",
-                use_container_width=True,
-            ):
-                active_program = value
-                active_track = TRACK_API
-                selected_tab = "Overview"
-                st.session_state["active_program"] = active_program
-                st.session_state["active_track"] = active_track
-                st.session_state["dashboard_tab"] = selected_tab
+    available_regions = sorted(set([frames.get("Region", region_from_frames(frames)) for frames in run_frames if frames.get("Region", region_from_frames(frames))]))
+    region_choices = ["All"] + [r for r in available_regions if str(r).upper() not in {"UNKNOWN", "N/A", "NA"}]
+    if len(region_choices) == 1:
+        region_choices = ["All", "US", "EMEA", "APJC"]
 
-        st.markdown("**2. Program Tracks**")
-        tcols = st.columns(len(tracks_html), gap="small")
-        for col, value in zip(tcols, tracks_html):
-            if col.button(
-                value,
-                key=f"track_nav_{sanitize_token(value)}",
-                type="primary" if active_track == value else "secondary",
-                use_container_width=True,
-            ):
-                active_track = value
-                selected_tab = "Overview"
-                st.session_state["active_track"] = active_track
-                st.session_state["dashboard_tab"] = selected_tab
+    program_links = ""
+    for icon, label, value in programs_html:
+        program_links += f'<a class="ciq-program-link{active_cls(active_program == value)}" target="_self" href="{nav_url(program=value, tab="Overview", track="API")}"><span style="width:28px;display:inline-block;">{icon}</span>{label}</a>'
 
-        st.markdown("**3. Dashboard Views**")
-        vcols = st.columns(len(tabs_html), gap="small")
-        for col, (value, label) in zip(vcols, tabs_html):
-            if col.button(
-                label,
-                key=f"view_nav_{sanitize_token(value)}",
-                type="primary" if selected_tab == value else "secondary",
-                use_container_width=True,
-            ):
-                selected_tab = value
-                st.session_state["dashboard_tab"] = selected_tab
+    track_links = ""
+    for value in tracks_html:
+        track_links += f'<a class="ciq-track-link{active_cls(active_track == value)}" target="_self" href="{nav_url(track=value, tab="Overview")}">{value}</a>'
+
+    tab_links = ""
+    for value, label in tabs_html:
+        tab_links += f'<a class="ciq-tab-link{active_cls(selected_tab == value)}" target="_self" href="{nav_url(tab=value)}">{label}</a>'
+
+    region_options = "".join([f'<option>{"All" if r == "All" else r}</option>' for r in region_choices])
+
+    st.markdown(
+        f"""
+<div class="ciq-nav-wrap">
+  <div class="ciq-program-panel">
+    <div class="ciq-title">1. Programs</div>
+    {program_links}
+  </div>
+  <div class="ciq-main-panel">
+    <div class="ciq-title">2. Program Tracks</div>
+    <div class="ciq-track-grid">
+      {track_links}
+      <div class="ciq-region-card">
+        <div class="ciq-region-title">Region Filter</div>
+        <select class="ciq-region-select">{region_options}</select>
+      </div>
+    </div>
+    <div class="ciq-title">3. Dashboard Views</div>
+    <div class="ciq-tab-grid">
+      {tab_links}
+      <div class="ciq-spacer"></div>
+    </div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
     if active_program != PROGRAM_SAAS:
         with st.container(border=True):
