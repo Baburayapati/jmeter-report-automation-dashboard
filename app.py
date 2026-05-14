@@ -3291,7 +3291,7 @@ def get_filtered_frames(run_frames: List[Dict[str, pd.DataFrame]], forced_region
                 "Region": region,
                 "Date": date,
                 "Duration": duration,
-                "Track": infer_program_track(label)[1],
+                "Track": str(info_row.get("Track") or infer_program_track(label)[1]),
                 "Application": str(info_row.get("Application", inferred.get("application", APP_NAME_TOKEN))),
                 "Program": str(info_row.get("Program", inferred.get("program", PROGRAM_SAAS))),
                 "Environment": str(info_row.get("Environment", inferred.get("env", "PROD"))),
@@ -3827,7 +3827,6 @@ def render_compare_tab(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
     askai_df, other_df = cached_track_comparison(run_frames)
 
     st.markdown('<div class="dashboard-subtitle">AskAI Tracks</div>', unsafe_allow_html=True)
-    st.caption("Matrix view by result. Each result is a grouped column block with Avg/Min/Max per track.")
     if not askai_df.empty:
         askai_html = track_comparison_matrix_html(askai_df, is_askai=True)
         if askai_html:
@@ -3838,7 +3837,6 @@ def render_compare_tab(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
         st.info("No AskAI tracks found.")
 
     st.markdown('<div class="dashboard-subtitle">Assets / Assessments / Home / Settings / Support Tracks</div>', unsafe_allow_html=True)
-    st.caption("Matrix view by result. Each result is a grouped column block with Avg/Min/Max per track.")
     if not other_df.empty:
         other_html = track_comparison_matrix_html(other_df, is_askai=False)
         if other_html:
@@ -4094,12 +4092,6 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         return
 
     region_focus = "All"
-
-    if active_track != "API":
-        with st.container(border=True):
-            st.markdown(f'<div class="panel-title">{active_track}</div>', unsafe_allow_html=True)
-            render_non_api_track_view(active_track)
-        return
 
     main_col, side_col = st.columns([4.35, .95], gap="medium")
 
@@ -5243,12 +5235,16 @@ def generate_dashboard_from_uploaded_csv_files(track_name: str, uploaded_files) 
         except Exception:
             pass
 
+    excel_bytes = build_excel_bytes_from_frames(run_frames) if run_frames else st.session_state.get("excel_bytes")
+    report_name = f"{track_name.replace(' ', '_')}_Report.xlsx"
     new_run_id = uuid.uuid4().hex
     dashboard_store[new_run_id] = {
         "run_frames": run_frames,
-        "excel_bytes": st.session_state.get("excel_bytes"),
-        "report_file_name": st.session_state.get("report_file_name", "JMeter_Report.xlsx"),
+        "excel_bytes": excel_bytes,
+        "report_file_name": report_name,
     }
+    st.session_state.excel_bytes = excel_bytes
+    st.session_state.report_file_name = report_name
     st.session_state.run_frames = run_frames
     st.session_state.messages = []
     st.session_state.run_id = new_run_id
