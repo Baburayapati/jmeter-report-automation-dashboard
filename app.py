@@ -3727,56 +3727,57 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         region_choices = ["All", "US", "EMEA", "APJC"]
 
     nav_changed = False
+    st.markdown('<div class="exact-nav-anchor"></div>', unsafe_allow_html=True)
     nav_left, nav_right = st.columns([1.15, 3.2], gap="small")
     with nav_left:
-        with st.container(border=True):
-            st.markdown("**1. Programs**")
-            for icon, label, value in programs_html:
-                if st.button(
-                    f"{icon}  {label}",
-                    key=f"prog_fast_{sanitize_token(value)}",
-                    type="primary" if active_program == value else "secondary",
-                    use_container_width=True,
-                ):
-                    st.session_state["active_program"] = value
-                    st.session_state["active_track"] = TRACK_API
-                    st.session_state["dashboard_tab"] = "Overview"
-                    nav_changed = True
+        st.markdown('<div class="exact-label white">1. Programs</div>', unsafe_allow_html=True)
+        for icon, label, value in programs_html:
+            if st.button(
+                f"{icon}  {label}",
+                key=f"prog_fast_{sanitize_token(value)}",
+                type="primary" if active_program == value else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["active_program"] = value
+                st.session_state["active_track"] = TRACK_API
+                st.session_state["dashboard_tab"] = "Overview"
+                nav_changed = True
 
     with nav_right:
-        with st.container(border=True):
-            st.markdown("**2. Program Tracks**")
-            t1, t2, t3, t4 = st.columns([.58, .68, 1.55, 1.95], gap="small")
-            for col, value in zip([t1, t2, t3, t4], tracks_html):
-                if col.button(
-                    value,
-                    key=f"trk_fast_{sanitize_token(value)}",
-                    type="primary" if active_track == value else "secondary",
-                    use_container_width=True,
-                ):
-                    st.session_state["active_track"] = value
-                    st.session_state["dashboard_tab"] = "Overview"
-                    nav_changed = True
+        st.markdown('<div class="exact-label">2. Program Tracks</div>', unsafe_allow_html=True)
+        t1, t2, t3, t4 = st.columns([.58, .68, 1.55, 1.95], gap="small")
+        for col, value in zip([t1, t2, t3, t4], tracks_html):
+            if col.button(
+                value,
+                key=f"trk_fast_{sanitize_token(value)}",
+                type="primary" if active_track == value else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["active_track"] = value
+                st.session_state["dashboard_tab"] = "Overview"
+                nav_changed = True
 
-            st.markdown("**3. Dashboard Views**")
-            v1, v2, v3, v4 = st.columns([1.05, 1.42, 1.32, 1.15], gap="small")
-            for col, (value, label) in zip([v1, v2, v3, v4], tabs_html):
-                if col.button(
-                    label,
-                    key=f"tab_fast_{sanitize_token(value)}",
-                    type="primary" if selected_tab == value else "secondary",
-                    use_container_width=True,
-                ):
-                    st.session_state["dashboard_tab"] = value
-                    nav_changed = True
+        st.markdown('<div class="exact-label" style="margin-top:10px;">3. Dashboard Views</div>', unsafe_allow_html=True)
+        v1, v2, v3, v4 = st.columns([1.05, 1.42, 1.32, 1.15], gap="small")
+        for col, (value, label) in zip([v1, v2, v3, v4], tabs_html):
+            if col.button(
+                label,
+                key=f"tab_fast_{sanitize_token(value)}",
+                type="primary" if selected_tab == value else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["dashboard_tab"] = value
+                nav_changed = True
 
-            st.selectbox(
-                "Region Filter",
-                region_choices,
-                index=0,
-                key="dashboard_nav_region_visual",
-                disabled=True,
-            )
+        st.markdown('<div class="exact-region-card">', unsafe_allow_html=True)
+        st.selectbox(
+            "Region Filter",
+            region_choices,
+            index=0,
+            key="dashboard_nav_region_visual",
+            disabled=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
     if nav_changed:
         if current_run_id:
