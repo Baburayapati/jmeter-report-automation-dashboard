@@ -4207,7 +4207,7 @@ def render_overview_comparison_summary(run_frames: List[Dict[str, pd.DataFrame]]
             with cols[i % len(cols)]:
                 parts = []
                 for bucket in buckets:
-                    label = bucket.replace("sec", "s")
+                    label = bucket.replace("sec", "s").replace(" %", "%")
                     value = float(row.get(bucket, 0) or 0)
                     parts.append(f'<div class="compare-bucket"><span>{label}</span><b>{value:.2f}%</b></div>')
                 bucket_html = "".join(parts)
