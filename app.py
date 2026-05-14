@@ -1779,6 +1779,23 @@ div[data-testid="stSelectbox"] div {
   font-size: 13px !important;
 }
 
+
+/* FINAL REMOVE SIDEBAR TOP SYMBOL */
+.upload-left-logo,
+div.upload-left-logo,
+[data-testid="stSidebar"] .upload-left-logo {
+  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+body:has(.upload-left-panel-marker) [data-testid="stSidebar"] > div:first-child {
+  padding-top: 18px !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -2465,7 +2482,7 @@ def render_upload_left_panel() -> str:
     ]
 
     with st.sidebar:
-        st.markdown('<div class="upload-left-logo">▥</div>', unsafe_allow_html=True)
+        pass  # sidebar logo removed
         for page_name, label in nav_items:
             active = st.session_state.upload_left_page == page_name
             if st.button(
