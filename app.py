@@ -43,7 +43,7 @@ NON_API_LATENCY_SLA_SEC = {
     TRACK_INVENTORY: 2.0,
 }
 
-st.set_page_config(page_title=APP_TITLE, layout="wide")
+st.set_page_config(page_title=APP_TITLE, layout="wide", initial_sidebar_state="expanded")
 
 
 st.markdown("""
@@ -1992,6 +1992,19 @@ body:has(.upload-left-panel-marker) .upload-left-logo {
   display: none !important;
 }
 
+/* keep sidebar fixed/open so upload UI does not break */
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+button[kind="header"],
+button[aria-label="Open sidebar"],
+button[aria-label="Close sidebar"],
+button[aria-label="Expand sidebar"],
+button[aria-label="Collapse sidebar"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -3301,6 +3314,9 @@ def get_filtered_frames(run_frames: List[Dict[str, pd.DataFrame]], forced_region
                 "region": region_options[0],
             }
             st.session_state["applied_dashboard_filters"] = all_filters
+            st.session_state[f"dashboard_filter_file_choice_{scope_token}"] = file_options[0]
+            st.session_state[f"dashboard_filter_date_choice_{scope_token}"] = date_options[0]
+            st.session_state[f"dashboard_filter_region_choice_{scope_token}"] = region_options[0]
         if apply_clicked or scope_key not in all_filters:
             all_filters[scope_key] = {
                 "file": selected_file_choice,
@@ -3606,6 +3622,7 @@ def render_detailed_report_tab(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
 def goto_tab_button(label: str, tab_name: str, key: str) -> None:
     if st.button(label, key=key):
         st.session_state["nav_target"] = tab_name
+        st.session_state["dashboard_tab"] = tab_name
 
 
 
@@ -3631,20 +3648,6 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         active_track = "API"
     st.session_state["active_track"] = active_track
 
-    def nav_url(tab=None, program=None, track=None):
-        import urllib.parse
-        q = {
-            "view": "dashboard",
-            "run_id": current_run_id,
-            "tab": tab or selected_tab,
-            "program": program or active_program,
-            "track": track or active_track,
-        }
-        return "?" + urllib.parse.urlencode(q)
-
-    def active_cls(is_active: bool) -> str:
-        return " active" if is_active else ""
-
     programs_html = [
         ("🎧", "Cisco IQ SaaS Support Services", PROGRAM_SAAS),
         ("▧", "Cisco IQ Onprem - Assets", "Cisco IQ Onprem - Assets"),
@@ -3660,39 +3663,48 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         ("Chatbot", "● AI Chatbot"),
     ]
 
-    program_links = ""
-    for icon, label, value in programs_html:
-        program_links += f'<a class="ciq-program-link{active_cls(active_program == value)}" target="_self" href="{nav_url(program=value, tab="Overview", track="API")}"><span style="width:28px;display:inline-block;">{icon}</span>{label}</a>'
+    with st.container(border=True):
+        st.markdown("**1. Programs**")
+        pcols = st.columns(len(programs_html), gap="small")
+        for col, (icon, label, value) in zip(pcols, programs_html):
+            if col.button(
+                f"{icon} {label}",
+                key=f"program_nav_{sanitize_token(value)}",
+                type="primary" if active_program == value else "secondary",
+                use_container_width=True,
+            ):
+                active_program = value
+                active_track = TRACK_API
+                selected_tab = "Overview"
+                st.session_state["active_program"] = active_program
+                st.session_state["active_track"] = active_track
+                st.session_state["dashboard_tab"] = selected_tab
 
-    track_links = ""
-    for value in tracks_html:
-        track_links += f'<a class="ciq-track-link{active_cls(active_track == value)}" target="_self" href="{nav_url(track=value, tab="Overview")}">{value}</a>'
+        st.markdown("**2. Program Tracks**")
+        tcols = st.columns(len(tracks_html), gap="small")
+        for col, value in zip(tcols, tracks_html):
+            if col.button(
+                value,
+                key=f"track_nav_{sanitize_token(value)}",
+                type="primary" if active_track == value else "secondary",
+                use_container_width=True,
+            ):
+                active_track = value
+                selected_tab = "Overview"
+                st.session_state["active_track"] = active_track
+                st.session_state["dashboard_tab"] = selected_tab
 
-    tab_links = ""
-    for value, label in tabs_html:
-        tab_links += f'<a class="ciq-tab-link{active_cls(selected_tab == value)}" target="_self" href="{nav_url(tab=value)}">{label}</a>'
-
-    st.markdown(
-        f"""
-<div class="ciq-nav-wrap">
-  <div class="ciq-program-panel">
-    <div class="ciq-title">1. Programs</div>
-    {program_links}
-  </div>
-  <div class="ciq-main-panel">
-    <div class="ciq-title">2. Program Tracks</div>
-    <div class="ciq-track-grid">
-      {track_links}
-    </div>
-    <div class="ciq-title">3. Dashboard Views</div>
-    <div class="ciq-tab-grid">
-      {tab_links}
-    </div>
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+        st.markdown("**3. Dashboard Views**")
+        vcols = st.columns(len(tabs_html), gap="small")
+        for col, (value, label) in zip(vcols, tabs_html):
+            if col.button(
+                label,
+                key=f"view_nav_{sanitize_token(value)}",
+                type="primary" if selected_tab == value else "secondary",
+                use_container_width=True,
+            ):
+                selected_tab = value
+                st.session_state["dashboard_tab"] = selected_tab
 
     if active_program != PROGRAM_SAAS:
         with st.container(border=True):
