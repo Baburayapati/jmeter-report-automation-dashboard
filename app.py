@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import html
 import re
 import json
 import hashlib
@@ -2360,6 +2361,9 @@ st.markdown(
   border-radius: 4px !important;
   background: #ffffff !important;
 }
+.login-form-wrap [data-testid="InputInstructions"] {
+  display: none !important;
+}
 .login-form-wrap [data-testid="stTextInput"] label {
   color: #1f2937 !important;
   font-size: 18px !important;
@@ -3597,6 +3601,107 @@ def display_track_comparison_df(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=["_TrackKey"], errors="ignore")
 
 
+def format_compare_cell(value: object) -> str:
+    try:
+        number = float(value)
+        if pd.isna(number):
+            return "-"
+        return f"{number:.2f}".rstrip("0").rstrip(".")
+    except Exception:
+        text = str(value).strip()
+        return text if text else "-"
+
+
+def track_comparison_matrix_html(data: pd.DataFrame, is_askai: bool) -> str:
+    if data.empty:
+        return ""
+
+    metric_order = ["Avg", "Min", "Max"]
+    bucket_cols = ["0-10sec %", "10-20sec %", "20-30sec %", ">30sec %"] if is_askai else ["0-2sec %", "3-4sec %", "4-6sec %", ">6sec %"]
+
+    detail = data[data["_TrackKey"] != "Total"].copy()
+    if detail.empty:
+        return ""
+
+    results: List[str] = []
+    tracks: List[str] = []
+    seen_results = set()
+    seen_tracks = set()
+    row_lookup: Dict[Tuple[str, str, str], pd.Series] = {}
+    last_result_by_track: Dict[str, str] = {}
+
+    for _, row in detail.iterrows():
+        track = str(row.get("_TrackKey", "")).strip()
+        if not track:
+            continue
+        if track not in seen_tracks:
+            tracks.append(track)
+            seen_tracks.add(track)
+
+        result = str(row.get("Result", "")).strip()
+        if result:
+            last_result_by_track[track] = result
+            if result not in seen_results:
+                results.append(result)
+                seen_results.add(result)
+        else:
+            result = last_result_by_track.get(track, "")
+
+        metric = str(row.get("Metric", "")).strip()
+        if result and metric in metric_order:
+            row_lookup[(track, result, metric)] = row
+
+    if not results or not tracks:
+        return ""
+
+    html_rows: List[str] = []
+    html_rows.append('<div class="track-compare-table-wrap">')
+    html_rows.append('<table class="track-compare-table">')
+
+    html_rows.append("<thead>")
+    header_top = [
+        '<tr>',
+        '<th class="fixed-col" rowspan="2">Track</th>',
+        '<th class="metric-col" rowspan="2">Metric</th>',
+    ]
+    for result in results:
+        header_top.append(f'<th class="result-group" colspan="{len(bucket_cols) + 1}">{html.escape(result)}</th>')
+    header_top.append("</tr>")
+    html_rows.append("".join(header_top))
+
+    header_second = ["<tr>"]
+    for _ in results:
+        for bucket in bucket_cols:
+            header_second.append(f"<th>{html.escape(bucket)}</th>")
+        header_second.append('<th class="max-header">Max Seconds</th>')
+    header_second.append("</tr>")
+    html_rows.append("".join(header_second))
+    html_rows.append("</thead>")
+
+    html_rows.append("<tbody>")
+    for track in tracks:
+        for metric_index, metric in enumerate(metric_order):
+            row_parts = ["<tr>"]
+            if metric_index == 0:
+                row_parts.append(f'<td class="track-name" rowspan="{len(metric_order)}">{html.escape(track)}</td>')
+            row_parts.append(f'<td class="metric-name">{html.escape(metric)}</td>')
+
+            for result in results:
+                row = row_lookup.get((track, result, metric))
+                for bucket in bucket_cols:
+                    value = row.get(bucket, "-") if row is not None else "-"
+                    row_parts.append(f'<td>{format_compare_cell(value)}</td>')
+                max_value = row.get("Max Seconds", "-") if row is not None else "-"
+                row_parts.append(f'<td class="max-col">{format_compare_cell(max_value)}</td>')
+
+            row_parts.append("</tr>")
+            html_rows.append("".join(row_parts))
+    html_rows.append("</tbody>")
+    html_rows.append("</table>")
+    html_rows.append("</div>")
+    return "".join(html_rows)
+
+
 def render_track_comparison_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
     askai_df, other_df = cached_track_comparison(run_frames)
 
@@ -3625,19 +3730,107 @@ def render_track_comparison_dashboard(run_frames: List[Dict[str, pd.DataFrame]])
 def render_compare_tab(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
     st.markdown('<div class="panel"><div class="panel-title">TRACK COMPARISON <span class="tag">Grouped by result</span></div>', unsafe_allow_html=True)
 
+    st.markdown(
+        """
+<style>
+.track-compare-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #c7cfdb;
+  border-radius: 10px;
+  background: #f6f8fc;
+}
+.track-compare-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  color: #111827;
+}
+.track-compare-table th,
+.track-compare-table td {
+  border: 1px solid #2a2a2a;
+  padding: 6px 8px;
+  text-align: right;
+  background: #ececec;
+  white-space: nowrap;
+}
+.track-compare-table th.fixed-col,
+.track-compare-table td.track-name {
+  text-align: left;
+  min-width: 220px;
+}
+.track-compare-table th.metric-col,
+.track-compare-table td.metric-name {
+  text-align: left;
+  min-width: 70px;
+}
+.track-compare-table th.result-group {
+  background: #f4ef00;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 900;
+  color: #101010;
+}
+.track-compare-table thead tr:nth-child(2) th {
+  background: #e5e5e5;
+  font-weight: 800;
+}
+.track-compare-table th.max-header,
+.track-compare-table td.max-col {
+  background: #f5c7ce;
+  color: #a0141a;
+  font-weight: 900;
+}
+.track-compare-table td.track-name {
+  font-size: 16px;
+  font-weight: 500;
+  background: #f3f3f3;
+}
+.track-compare-table td.metric-name {
+  font-size: 16px;
+  font-weight: 700;
+  background: #efefef;
+}
+.track-compare-table td {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.05;
+}
+@media (max-width: 1200px) {
+  .track-compare-table th.result-group,
+  .track-compare-table td.track-name,
+  .track-compare-table td.metric-name,
+  .track-compare-table td {
+    font-size: 14px;
+  }
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
     askai_df, other_df = cached_track_comparison(run_frames)
 
     st.markdown('<div class="dashboard-subtitle">AskAI Tracks</div>', unsafe_allow_html=True)
-    st.caption("Result includes the region. Repeated Track and Result cells are intentionally blank to keep Avg, Min and Max rows grouped together.")
+    st.caption("Matrix view by result. Each result is a grouped column block with Avg/Min/Max per track.")
     if not askai_df.empty:
-        st.dataframe(display_track_comparison_df(askai_df), use_container_width=True, hide_index=True, height=min(520, 78 + 36 * len(askai_df)))
+        askai_html = track_comparison_matrix_html(askai_df, is_askai=True)
+        if askai_html:
+            st.markdown(askai_html, unsafe_allow_html=True)
+        else:
+            st.info("No AskAI comparison rows found.")
     else:
         st.info("No AskAI tracks found.")
 
     st.markdown('<div class="dashboard-subtitle">Assets / Assessments / Home / Settings / Support Tracks</div>', unsafe_allow_html=True)
-    st.caption("Result includes the region. Repeated Track and Result cells are intentionally blank to keep Avg, Min and Max rows grouped together.")
+    st.caption("Matrix view by result. Each result is a grouped column block with Avg/Min/Max per track.")
     if not other_df.empty:
-        st.dataframe(display_track_comparison_df(other_df), use_container_width=True, hide_index=True, height=min(620, 78 + 36 * len(other_df)))
+        other_html = track_comparison_matrix_html(other_df, is_askai=False)
+        if other_html:
+            st.markdown(other_html, unsafe_allow_html=True)
+        else:
+            st.info("No non-AskAI comparison rows found.")
     else:
         st.info("No non-AskAI tracks found.")
 
