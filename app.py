@@ -3606,6 +3606,11 @@ def get_filtered_frames(run_frames: List[Dict[str, pd.DataFrame]], forced_region
     if meta.empty:
         return []
 
+    if forced_region and forced_region != "All":
+        meta = meta[meta["Region"].astype(str) == str(forced_region)].copy()
+        if meta.empty:
+            return []
+
     files = meta["Result Option"].astype(str).tolist()
     dedup = {}
     for i, name in enumerate(files):
@@ -3643,7 +3648,7 @@ def get_filtered_frames(run_frames: List[Dict[str, pd.DataFrame]], forced_region
             unsafe_allow_html=True,
         )
 
-        scope_key = f"{st.session_state.get('run_id','')}::{active_program}::{forced_track}"
+        scope_key = f"{st.session_state.get('run_id','')}::{active_program}::{forced_track}::{forced_region}"
         scope_token = hashlib.md5(scope_key.encode("utf-8")).hexdigest()[:12]
         all_filters = st.session_state.setdefault("applied_dashboard_filters", {})
         current_filters = all_filters.get(scope_key, {
@@ -3693,8 +3698,6 @@ def get_filtered_frames(run_frames: List[Dict[str, pd.DataFrame]], forced_region
     selected_files = files if active_filters.get("file") == file_options[0] else [active_filters.get("file")]
     selected_dates = dates if active_filters.get("date") == date_options[0] else [active_filters.get("date")]
     selected_regions = regions
-    if forced_region and forced_region != "All":
-        selected_regions = [forced_region]
 
     if not selected_files or not selected_dates or not selected_regions:
         return []
@@ -4315,51 +4318,53 @@ def render_detailed_report_tab(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
 
 
 def render_defect_details_tab(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
-    df = combined_df(run_frames)
     st.markdown('<div class="panel"><div class="panel-title">DEFECT DETAILS</div>', unsafe_allow_html=True)
-    if df.empty:
-        st.info("No report data available for defect details.")
+    st.info("No defect details are available yet. Jira or bug-tracking tickets will appear here once provided.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_dashboard_excel_report_actions(region_focus: str = "All") -> None:
+    api_uploads = [
+        item for item in normalize_saved_uploads(load_saved_uploads())
+        if canonical_track_name(item.get("track") or infer_program_track(item.get("file_name", ""))[1]) == TRACK_API
+    ]
+    if region_focus and region_focus != "All":
+        api_uploads = [
+            item for item in api_uploads
+            if str(item.get("region") or infer_saved_report_info(item.get("file_name", "")).get("region", "Unknown")) == str(region_focus)
+        ]
+
+    st.markdown('<div class="side-card"><div class="panel-title">REPORT ACTIONS</div>', unsafe_allow_html=True)
+    if not api_uploads:
+        st.info("No API Excel reports are available for the selected region.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    work = df.copy()
-    if "errorCount" not in work.columns:
-        work["errorCount"] = 0
-    if "SLA Status" not in work.columns:
-        work["SLA Status"] = "PASS"
-
-    err_series = pd.to_numeric(work.get("errorCount", 0), errors="coerce").fillna(0)
-    defect_rows = work[(err_series > 0) | (work["SLA Status"].astype(str) == "FAIL")].copy()
-
-    if defect_rows.empty:
-        st.success("No defects found for the selected filters.")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-
-    view_cols = safe_cols(
-        defect_rows,
-        [
-            "Feature",
-            "Scenario",
-            "Endpoint",
-            "Region",
-            "sampleCount",
-            "errorCount",
-            "errorPct",
-            "Avg ResTime in sec",
-            "MaxRes Time in sec",
-            "SLA Sec",
-            "SLA Status",
-            "SLA Breach Sec",
-        ],
-    )
-    defect_rows = defect_rows.sort_values(["errorCount", "SLA Breach Sec", "MaxRes Time in sec"], ascending=False)
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Defect Rows", f"{len(defect_rows):,}")
-    c2.metric("SLA Fail Rows", f"{int((defect_rows['SLA Status'].astype(str) == 'FAIL').sum()):,}")
-    c3.metric("Total Errors", f"{int(pd.to_numeric(defect_rows.get('errorCount', 0), errors='coerce').fillna(0).sum()):,}")
-    st.dataframe(defect_rows[view_cols], use_container_width=True, hide_index=True, height=650)
+    for idx, item in enumerate(api_uploads):
+        original_name = item.get("file_name", "API_Report.json")
+        saved_name = item.get("saved_name", "")
+        saved_path = SAVED_REPORTS_DIR / saved_name
+        display_name = compact_saved_file_label(original_name)
+        st.markdown(f'<div class="excel-only-name">{display_name}</div>', unsafe_allow_html=True)
+        if saved_path.exists():
+            try:
+                excel_bytes_for_download = cached_excel_bytes_for_saved_api(
+                    str(saved_path),
+                    display_name,
+                    saved_path.stat().st_mtime,
+                )
+                st.download_button(
+                    "Download Excel Report",
+                    data=excel_bytes_for_download,
+                    file_name=f"{display_name}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dashboard_excel_download_{idx}_{sanitize_token(saved_name)}",
+                    use_container_width=True,
+                )
+            except Exception as exc:
+                st.error(f"Unable to prepare Excel report: {exc}")
+        else:
+            st.warning("Saved source file is missing.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -4383,7 +4388,8 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
     # Fast in-app navigation with screenshot-like layout.
     current_run_id = params.get("run_id", "") or st.session_state.get("run_id", "")
     requested_tab = st.session_state.pop("nav_target", "")
-    selected_tab = requested_tab or params.get("tab", "") or st.session_state.get("dashboard_tab") or "Overview"
+    url_tab = params.get("tab", "")
+    selected_tab = requested_tab or url_tab or "Overview"
     legacy_tabs = {"Drilldown": "Detailed Report", "Compare": "Track Comparison", "Reports": "Overview", "Trends": "Overview"}
     selected_tab = legacy_tabs.get(selected_tab, selected_tab)
     if selected_tab not in ["Overview", "Track Comparison", "Detailed Report", "Defect details", "Chatbot"]:
@@ -4497,19 +4503,7 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
     with side_col:
         selected_frames = get_filtered_frames(run_frames, forced_region=region_focus, forced_track=active_track)
         if selected_tab != "Chatbot":
-            st.markdown('<div class="side-card"><div class="panel-title">REPORT ACTIONS</div>', unsafe_allow_html=True)
-            if st.session_state.get("excel_bytes"):
-                st.download_button(
-                    "⬇ Download Excel Report",
-                    data=st.session_state.excel_bytes,
-                    file_name=st.session_state.report_file_name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="side_panel_excel_download",
-                    use_container_width=True,
-                )
-            else:
-                st.info("Excel report is not available in this dashboard session.")
-            st.markdown("</div>", unsafe_allow_html=True)
+            render_dashboard_excel_report_actions(region_focus)
 
         st.markdown('<div class="side-card"><div class="panel-title">INSIGHTS</div>', unsafe_allow_html=True)
         if selected_tab == "Chatbot":
