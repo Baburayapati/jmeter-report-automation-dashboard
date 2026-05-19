@@ -12,6 +12,7 @@ from io import BytesIO
 from typing import Dict, List, Tuple
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
