@@ -3518,7 +3518,16 @@ def sla_donut(df: pd.DataFrame):
         height=280,
         margin=dict(l=5, r=5, t=15, b=5),
         legend=dict(orientation="v", yanchor="middle", y=.5, xanchor="left", x=.82),
-        annotations=[dict(text=f"<b>{pass_pct:.2f}%</b><br>PASS<br><span style='font-size:14px'>{percent_by_status['FAIL']:.2f}% FAIL</span>", x=.39, y=.5, font_size=18, showarrow=False)],
+        annotations=[dict(
+            text=f"<b>{pass_pct:.2f}%</b><br>PASS<br><span style='font-size:15px'>{percent_by_status['FAIL']:.2f}% FAIL</span>",
+            x=.50,
+            y=.50,
+            xanchor="center",
+            yanchor="middle",
+            align="center",
+            font_size=18,
+            showarrow=False,
+        )],
     )
     return fig
 
@@ -6234,6 +6243,8 @@ def load_static_saved_dashboard() -> bool:
     if not frames:
         return False
 
+    chatbot_only = (params.get("tab", "") or st.session_state.get("dashboard_tab", "")) == "Chatbot"
+
     uploads = normalize_saved_uploads(load_saved_uploads())
     signature = "|".join(
         f"{item.get('saved_name','')}:{(SAVED_REPORTS_DIR / item.get('saved_name','')).stat().st_mtime_ns}"
@@ -6244,7 +6255,7 @@ def load_static_saved_dashboard() -> bool:
         return True
 
     st.session_state["run_frames"] = frames
-    excel_bytes = None
+    excel_bytes = st.session_state.get("excel_bytes")
     try:
         api_items = [
             item for item in uploads
@@ -6260,7 +6271,9 @@ def load_static_saved_dashboard() -> bool:
             api_paths.append(saved_path)
             api_labels.append(Path(item.get("file_name", saved_path.name)).stem)
 
-        if len(api_paths) == 1:
+        if chatbot_only:
+            excel_bytes = st.session_state.get("excel_bytes")
+        elif len(api_paths) == 1:
             with tempfile.TemporaryDirectory() as tmpdir:
                 copied = Path(tmpdir) / f"{api_labels[0]}.json"
                 copied.write_bytes(api_paths[0].read_bytes())
