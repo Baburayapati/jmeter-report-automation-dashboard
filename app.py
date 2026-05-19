@@ -2818,6 +2818,23 @@ def apply_ui_speed_index_sla(df: pd.DataFrame) -> pd.DataFrame:
     return work
 
 
+def apply_api_sla_thresholds(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    work = df.copy()
+    if "Feature" not in work.columns:
+        work["Feature"] = "API"
+
+    feature_text = work["Feature"].astype(str)
+    ask_mask = feature_text.str.upper().str.contains("ASKAI|ASK AI", regex=True, na=False)
+    work["SLA Sec"] = np.where(ask_mask, 10.0, 2.0)
+
+    avg_series = pd.to_numeric(work.get("Avg ResTime in sec", 0), errors="coerce").fillna(0)
+    work["SLA Status"] = (avg_series <= pd.to_numeric(work["SLA Sec"], errors="coerce").fillna(2.0)).map({True: "PASS", False: "FAIL"})
+    work["SLA Breach Sec"] = (avg_series - pd.to_numeric(work["SLA Sec"], errors="coerce").fillna(2.0)).clip(lower=0).round(3)
+    return work
+
+
 def track_summary(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
@@ -3688,8 +3705,16 @@ def cached_auto_insights(run_frames: List[Dict[str, pd.DataFrame]]) -> List[Tupl
 
 def response_bucket(value: float, is_askai: bool) -> str:
     value = float(value or 0)
-    if value <= 3:
-        return "0-3s %"
+    if is_askai:
+        if value <= 15:
+            return "10-15s %"
+        if value <= 20:
+            return "15-20s %"
+        if value <= 30:
+            return "20-30s %"
+        return ">30s %"
+    if value <= 2:
+        return "0-2s %"
     if value <= 4:
         return "3-4s %"
     if value <= 5:
@@ -3708,7 +3733,7 @@ def metric_bucket_summary(df: pd.DataFrame, track: str, metric: str, is_askai: b
     if rows.empty or col not in rows.columns:
         return [0, 0, 0, 0]
 
-    bucket_names = ["0-3s %", "3-4s %", "4-5s %", ">6s %"]
+    bucket_names = ["10-15s %", "15-20s %", "20-30s %", ">30s %"] if is_askai else ["0-2s %", "3-4s %", "4-5s %", ">6s %"]
     counts = dict.fromkeys(bucket_names, 0)
     values = pd.to_numeric(rows[col], errors="coerce").fillna(0)
     for value in values:
@@ -3746,29 +3771,29 @@ def build_dashboard_track_comparison(run_frames: List[Dict[str, pd.DataFrame]]) 
 
     other_tracks = all_tracks
 
-    def metric_bucket_summary_for_rows(rows: pd.DataFrame, metric: str) -> List[float]:
+    def metric_bucket_summary_for_rows(rows: pd.DataFrame, metric: str, is_askai: bool) -> List[float]:
         col_map = {
             "Avg": "Avg ResTime in sec",
             "Min": "Min ResTime in sec",
             "Max": "MaxRes Time in sec",
         }
         col = col_map[metric]
-        bucket_names = ["0-3s %", "3-4s %", "4-5s %", ">6s %"]
+        bucket_names = ["10-15s %", "15-20s %", "20-30s %", ">30s %"] if is_askai else ["0-2s %", "3-4s %", "4-5s %", ">6s %"]
         if rows.empty or col not in rows.columns:
             return [0, 0, 0, 0, 0]
 
         counts = dict.fromkeys(bucket_names, 0)
         values = pd.to_numeric(rows[col], errors="coerce").fillna(0)
         for value in values:
-            bucket = response_bucket(float(value), False)
+            bucket = response_bucket(float(value), is_askai)
             counts[bucket] = counts.get(bucket, 0) + 1
         total = len(values) if len(values) else 1
         percentages = [round(counts[name] / total * 100, 2) for name in bucket_names]
         return percentages + [round(float(values.max()), 2)]
 
-    def build_section(tracks: List[str]) -> pd.DataFrame:
+    def build_section(tracks: List[str], is_askai: bool) -> pd.DataFrame:
         rows = []
-        bucket_names = ["0-3s %", "3-4s %", "4-5s %", ">6s %"]
+        bucket_names = ["10-15s %", "15-20s %", "20-30s %", ">30s %"] if is_askai else ["0-2s %", "3-4s %", "4-5s %", ">6s %"]
         row_targets = ["Total"] + tracks
 
         for target in row_targets:
@@ -3783,7 +3808,7 @@ def build_dashboard_track_comparison(run_frames: List[Dict[str, pd.DataFrame]]) 
 
                 display_label = run_display_label(frames)
                 for metric_index, metric in enumerate(["Min", "Max"]):
-                    values = metric_bucket_summary_for_rows(api_rows, metric)
+                    values = metric_bucket_summary_for_rows(api_rows, metric, is_askai)
                     row = {
                         "_TrackKey": target,
                         "Track": target if first_target_row else "",
@@ -3797,7 +3822,9 @@ def build_dashboard_track_comparison(run_frames: List[Dict[str, pd.DataFrame]]) 
 
         return pd.DataFrame(rows)
 
-    return pd.DataFrame(), build_section(other_tracks)
+    askai_tracks = [t for t in other_tracks if "ASKAI" in str(t).upper().replace(" ", "")]
+    api_tracks = [t for t in other_tracks if t not in askai_tracks]
+    return build_section(askai_tracks, True), build_section(api_tracks, False)
 
 
 def display_track_comparison_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -3824,7 +3851,11 @@ def track_comparison_matrix_html(data: pd.DataFrame) -> str:
         return ""
 
     metric_order = ["Min", "Max"]
-    bucket_cols = ["0-3s %", "3-4s %", "4-5s %", ">6s %"]
+    data_cols = set(data.columns)
+    if {"10-15s %", "15-20s %", "20-30s %", ">30s %"}.issubset(data_cols):
+        bucket_cols = ["10-15s %", "15-20s %", "20-30s %", ">30s %"]
+    else:
+        bucket_cols = ["0-2s %", "3-4s %", "4-5s %", ">6s %"]
 
     detail = data[data["_TrackKey"] != "Total"].copy()
     if detail.empty:
@@ -3930,6 +3961,7 @@ def render_track_comparison_dashboard(run_frames: List[Dict[str, pd.DataFrame]])
         return
 
     st.markdown('<div class="panel-title" style="margin-top:12px;">TRACK COMPARISON DASHBOARD</div>', unsafe_allow_html=True)
+    render_section("AskAI Track Comparison", askai_df, 320)
     render_section("Track Comparison", other_df, 380)
 
 
@@ -4027,6 +4059,13 @@ def render_compare_tab(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
     )
 
     askai_df, other_df = cached_track_comparison(run_frames)
+
+    if not askai_df.empty:
+        st.markdown('<div class="dashboard-subtitle">AskAI Track Comparison</div>', unsafe_allow_html=True)
+        askai_html = track_comparison_matrix_html(askai_df)
+        if askai_html:
+            st.markdown(askai_html, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
     if not other_df.empty:
         other_html = track_comparison_matrix_html(other_df)
@@ -4325,20 +4364,11 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         selected_frames = get_filtered_frames(run_frames, forced_region=region_focus, forced_track=active_track)
         insights = cached_auto_insights(selected_frames)
         st.markdown('<div class="side-card"><div class="panel-title">REPORT ACTIONS</div>', unsafe_allow_html=True)
-        report_bytes = st.session_state.get("excel_bytes")
-        report_name = st.session_state.get("report_file_name", "JMeter_Report.xlsx")
-        if active_track == TRACK_API and selected_frames:
-            try:
-                report_bytes = build_excel_bytes_from_frames(selected_frames)
-                report_name = "JMeter_Report.xlsx"
-            except Exception:
-                pass
-
-        if report_bytes:
+        if st.session_state.get("excel_bytes"):
             st.download_button(
                 "⬇ Download Excel Report",
-                data=report_bytes,
-                file_name=report_name,
+                data=st.session_state.excel_bytes,
+                file_name=st.session_state.report_file_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="side_panel_excel_download",
                 use_container_width=True,
@@ -4367,6 +4397,8 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         df = cached_combined_df(selected_frames)
         if active_track == TRACK_UI:
             df = apply_ui_speed_index_sla(df)
+        elif active_track == TRACK_API:
+            df = apply_api_sla_thresholds(df)
 
         if selected_tab == "Track Comparison":
             render_compare_tab(selected_frames)
@@ -6064,8 +6096,7 @@ def load_static_saved_dashboard() -> bool:
         return True
 
     st.session_state["run_frames"] = frames
-    api_frames = [f for f in frames if frame_track_name(f) == TRACK_API]
-    st.session_state["excel_bytes"] = build_excel_bytes_from_frames(api_frames) if api_frames else None
+    st.session_state["excel_bytes"] = None
     st.session_state["report_file_name"] = "JMeter_Report.xlsx"
     st.session_state["messages"] = []
     st.session_state["dashboard_tab"] = "Overview"
