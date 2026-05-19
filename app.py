@@ -3093,7 +3093,7 @@ def dashboard_view_tabs() -> str:
     return current_tab
 
 
-def kpi_cards(df: pd.DataFrame, previous_df: pd.DataFrame | None = None, title: str = "AGGREGATED PERFORMANCE OVERVIEW METRICS", compact: bool = False) -> None:
+def kpi_cards(df: pd.DataFrame, previous_df: pd.DataFrame | None = None, title: str = "AGGREGATED PERFORMANCE OVERVIEW METRICS", compact: bool = False, show_health: bool = True) -> None:
     s = summarize_run(df)
     sla_fail = round(100 - s["sla_compliance"], 2) if s["transactions"] else 0
 
@@ -3110,14 +3110,14 @@ def kpi_cards(df: pd.DataFrame, previous_df: pd.DataFrame | None = None, title: 
         return f'<div class="agg-delta {css_class}">{arrow} {sign}{diff:g}{suffix} vs prev</div>'
 
     previous_sla_fail = round(100 - previous["sla_compliance"], 2) if previous else None
-    health_delta = delta_html(s["performance_score"], previous["performance_score"] if previous else None)
+    health_delta = delta_html(s["performance_score"], previous["performance_score"] if previous else None) if show_health else ""
     sla_pass_delta = delta_html(s["sla_compliance"], previous["sla_compliance"] if previous else None, "%")
     sla_fail_delta = delta_html(sla_fail, previous_sla_fail, "%", lower_is_better=True)
     apis_delta = delta_html(s["transactions"], previous["transactions"] if previous else None)
     samples_delta = delta_html(s["samples"], previous["samples"] if previous else None)
     errors_delta = delta_html(s["errors"], previous["errors"] if previous else None, lower_is_better=True)
 
-    if not health_delta:
+    if show_health and not health_delta:
         health_delta = """
         <svg class="agg-spark" viewBox="0 0 130 28" xmlns="http://www.w3.org/2000/svg">
           <polyline points="2,20 16,19 29,20 42,17 55,18 68,11 81,16 94,18 107,9 124,14 129,8"
@@ -3164,8 +3164,19 @@ def kpi_cards(df: pd.DataFrame, previous_df: pd.DataFrame | None = None, title: 
     </div>
     """
 
-    columns = 3 if compact else 6
+    columns = (3 if compact else 6) if show_health else (2 if compact else 5)
     component_height = 205 if not compact else 190
+
+    health_card = "" if not show_health else f"""
+    <div class="agg-kpi">
+      <div class="agg-icon" style="background:linear-gradient(135deg,#2563eb,#4f46e5);">🛡</div>
+      <div>
+        <div class="agg-label">Health Score</div>
+        <div class="agg-value">{s['performance_score']}<span class="agg-suffix">/100</span></div>
+        {health_delta}
+      </div>
+    </div>
+    """
 
     html = f"""
 <!DOCTYPE html>
@@ -3270,14 +3281,7 @@ body {{
   <div class="agg-summary-title">{title}</div>
   <div class="agg-kpi-row">
 
-    <div class="agg-kpi">
-      <div class="agg-icon" style="background:linear-gradient(135deg,#2563eb,#4f46e5);">🛡</div>
-      <div>
-        <div class="agg-label">Health Score</div>
-        <div class="agg-value">{s['performance_score']}<span class="agg-suffix">/100</span></div>
-        {health_delta}
-      </div>
-    </div>
+    {health_card}
 
     <div class="agg-kpi">
       <div class="agg-icon" style="background:#16843a;">✓</div>
@@ -3307,7 +3311,7 @@ body {{
     components.html(html, height=component_height, scrolling=False)
 
 
-def build_run_summary_table(run_frames: List[Dict[str, pd.DataFrame]]) -> pd.DataFrame:
+def build_run_summary_table(run_frames: List[Dict[str, pd.DataFrame]], include_health: bool = True) -> pd.DataFrame:
     rows = []
     baseline = None
     for index, frames in enumerate(run_frames):
@@ -3315,18 +3319,21 @@ def build_run_summary_table(run_frames: List[Dict[str, pd.DataFrame]]) -> pd.Dat
         if baseline is None:
             baseline = row.copy()
         sla_fail = round(100 - row["sla_compliance"], 2)
-        rows.append({
+        row_data = {
             "Result": run_display_label(frames),
             "Region": frames.get("Region", region_from_frames(frames)),
-            "Health Score": row["performance_score"],
             "SLA Pass %": row["sla_compliance"],
             "SLA Fail %": sla_fail,
-        })
+        }
+        if include_health:
+            row_data["Health Score"] = row["performance_score"]
+        rows.append(row_data)
     return pd.DataFrame(rows)
 
 
 def render_aggregated_or_comparison_summary(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
     active_track = canonical_track_name(st.session_state.get("active_track") or params.get("track", "") or TRACK_API)
+    hide_health = active_track == TRACK_UI
     scoped_frames = run_frames
     if active_track == TRACK_UI:
         scoped_frames = []
@@ -3337,14 +3344,14 @@ def render_aggregated_or_comparison_summary(run_frames: List[Dict[str, pd.DataFr
             scoped_frames.append(f)
 
     if len(run_frames) <= 1:
-        kpi_cards(combined_df(scoped_frames), compact=True)
+        kpi_cards(combined_df(scoped_frames), compact=True, show_health=not hide_health)
         return
 
     current_df = scoped_frames[-1]["APIs"]
     previous_df = scoped_frames[-2]["APIs"] if len(scoped_frames) > 1 else None
-    kpi_cards(current_df, previous_df=previous_df, title="AGGREGATED PERFORMANCE OVERVIEW METRICS", compact=True)
+    kpi_cards(current_df, previous_df=previous_df, title="AGGREGATED PERFORMANCE OVERVIEW METRICS", compact=True, show_health=not hide_health)
 
-    summary = build_run_summary_table(scoped_frames)
+    summary = build_run_summary_table(scoped_frames, include_health=not hide_health)
     st.markdown('<div class="panel"><div class="panel-title">COMPARISON SUMMARY</div>', unsafe_allow_html=True)
     st.dataframe(summary, use_container_width=True, hide_index=True, height=min(245, 72 + 42 * len(summary)))
     st.markdown("</div>", unsafe_allow_html=True)
@@ -4171,8 +4178,6 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
         track_name = canonical_track_name(info_row.get("Track") or infer_program_track(frames.get("Label", ""))[1])
         if track_name in track_values and track_name not in available_tracks:
             available_tracks.append(track_name)
-    if available_tracks and active_track not in available_tracks:
-        active_track = available_tracks[0]
 
     st.session_state["active_track"] = active_track
 
@@ -4882,6 +4887,10 @@ def run_display_label(frames: Dict[str, pd.DataFrame]) -> str:
     users_clean = clean_users(users)
     devices_clean = clean_devices(devices)
     region_clean = region if region and region != "Unknown" else "Region"
+
+    track_name = frame_track_name(frames)
+    if track_name == TRACK_UI:
+        return f"{users_clean}Users-{devices_clean}Devices"
 
     return f"{region_clean}-{users_clean}VU-{devices_clean}"
 
