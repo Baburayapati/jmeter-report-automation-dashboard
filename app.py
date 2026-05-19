@@ -3221,6 +3221,23 @@ def render_dashboard_header() -> None:
     )
 
 
+def render_browser_back_reload_hook() -> None:
+    components.html(
+        """
+<script>
+const parentWindow = window.parent;
+if (!parentWindow.__ciscoiqBackReloadHookInstalled) {
+  parentWindow.__ciscoiqBackReloadHookInstalled = true;
+  parentWindow.addEventListener('popstate', () => {
+    setTimeout(() => parentWindow.location.reload(), 20);
+  });
+}
+</script>
+""",
+        height=0,
+    )
+
+
 def dashboard_href(tab_name: str = "Overview", **overrides: str) -> str:
     query = {
         "view": "dashboard",
@@ -4431,6 +4448,7 @@ def goto_tab_button(label: str, tab_name: str, key: str) -> None:
 
 def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> None:
     # Fast in-app navigation with screenshot-like layout.
+    render_browser_back_reload_hook()
     current_run_id = params.get("run_id", "") or st.session_state.get("run_id", "")
     requested_tab = st.session_state.pop("nav_target", "")
     url_tab = params.get("tab", "")
@@ -4549,7 +4567,7 @@ def render_executive_dashboard(run_frames: List[Dict[str, pd.DataFrame]]) -> Non
 
     with side_col:
         selected_frames = get_filtered_frames(run_frames, forced_region=region_focus, forced_track=active_track)
-        if selected_tab != "Chatbot":
+        if selected_tab != "Chatbot" and active_track == TRACK_API:
             render_dashboard_excel_report_actions(region_focus)
 
         st.markdown('<div class="side-card"><div class="panel-title">INSIGHTS</div>', unsafe_allow_html=True)
